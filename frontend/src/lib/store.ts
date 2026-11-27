@@ -108,6 +108,10 @@ interface Settings {
   speechEnabled: boolean;
   voiceOutputEnabled: boolean;
   voiceAutoplay: boolean;
+  // Kokoro voice id (e.g. bm_george, bf_emma). Voice ids are backend
+  // specific, so this is only sent when the active backend is kokoro.
+  voiceId: string;
+  voiceSpeed: number;
   // IANA time zone for dates in answers; '' = this device's zone.
   timeZone: string;
 }
@@ -125,6 +129,8 @@ function loadSettings(): Settings {
     speechEnabled: false,
     voiceOutputEnabled: false,
     voiceAutoplay: false,
+    voiceId: 'bm_george',
+    voiceSpeed: 1.0,
     timeZone: '',
   };
   try {

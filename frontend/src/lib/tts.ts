@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { synthesizeSpeech, fetchTtsHealth } from './api';
 import { toSpeakableText } from './message-text';
+import { useAppStore } from './store';
+
+// Kokoro voice ids look like "<lang><gender>_<name>" (bm_george, af_heart).
+// Other backends use their own ids, so only forward the selection when it is
+// recognisably a Kokoro id — otherwise the backend would reject it.
+const KOKORO_VOICE_RE = /^[a-z]{1,2}_[a-z]+$/;
 
 export type TtsState = 'idle' | 'loading' | 'speaking';
 
@@ -113,7 +119,15 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
     controller = ac;
 
     try {
-      const blob = await synthesizeSpeech(trimmed, { signal: ac.signal });
+      const { settings } = useAppStore.getState();
+      const chosenVoice = KOKORO_VOICE_RE.test(settings.voiceId || '')
+        ? settings.voiceId
+        : undefined;
+      const blob = await synthesizeSpeech(trimmed, {
+        signal: ac.signal,
+        voiceId: chosenVoice,
+        speed: settings.voiceSpeed || undefined,
+      });
       if (mine !== token) return;
 
       const url = URL.createObjectURL(blob);

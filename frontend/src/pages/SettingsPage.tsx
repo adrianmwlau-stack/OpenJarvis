@@ -19,6 +19,24 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
+
+// Kokoro v1.0 voices. British first, matching the owner's preference on the
+// phone app. Voice ids are language-prefixed: b* = British, a* = American,
+// second letter = gender.
+const KOKORO_VOICES = [
+  { id: 'bm_george', label: 'British male — George' },
+  { id: 'bm_lewis', label: 'British male — Lewis' },
+  { id: 'bm_daniel', label: 'British male — Daniel' },
+  { id: 'bm_fable', label: 'British male — Fable' },
+  { id: 'bf_emma', label: 'British female — Emma' },
+  { id: 'bf_isabella', label: 'British female — Isabella' },
+  { id: 'bf_alice', label: 'British female — Alice' },
+  { id: 'bf_lily', label: 'British female — Lily' },
+  { id: 'af_heart', label: 'American female — Heart' },
+  { id: 'af_bella', label: 'American female — Bella' },
+  { id: 'am_michael', label: 'American male — Michael' },
+  { id: 'am_fenrir', label: 'American male — Fenrir' },
+];
 import { deviceTimeZone, listTimeZones, resolveTimeZone, utcOffsetLabel } from '../lib/timezone';
 import {
   checkHealth,
@@ -861,7 +879,7 @@ export function SettingsPage() {
                 />
               </button>
             </SettingRow>
-            <SettingRow label="Voice" description="Backend and voice used for spoken replies">
+            <SettingRow label="Voice" description={ttsBackend?.available ? 'Voice and speed used for spoken replies' : 'No text-to-speech backend available'}>
               <div className="flex items-center gap-2">
                 <span
                   className="w-2 h-2 rounded-full"
@@ -869,13 +887,40 @@ export function SettingsPage() {
                     background: ttsBackend?.available ? 'var(--color-success)' : 'var(--color-text-tertiary)',
                   }}
                 />
-                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                  {ttsBackend === null ? 'Checking...'
-                    : ttsBackend.available ? `${ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id}` : ''}`
-                    : 'Not configured'}
-                </span>
+                {ttsBackend?.available && ttsBackend.backend === 'kokoro' ? (
+                  <select
+                    value={settings.voiceId || 'bm_george'}
+                    onChange={(e) => { updateSettings({ voiceId: e.target.value }); showSaved(); }}
+                    className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                    style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  >
+                    {KOKORO_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>{v.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {ttsBackend === null ? 'Checking...'
+                      : ttsBackend.available ? `${ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id}` : ''}`
+                      : 'Not configured'}
+                  </span>
+                )}
               </div>
             </SettingRow>
+            {ttsBackend?.available && ttsBackend.backend === 'kokoro' && (
+              <SettingRow label="Speaking speed" description="1.0 is normal; below is slower, above is faster">
+                <select
+                  value={String(settings.voiceSpeed ?? 1)}
+                  onChange={(e) => { updateSettings({ voiceSpeed: Number(e.target.value) }); showSaved(); }}
+                  className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                  style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                >
+                  {[0.8, 0.9, 1, 1.1, 1.2, 1.4].map((s) => (
+                    <option key={s} value={s}>{s.toFixed(1)}×</option>
+                  ))}
+                </select>
+              </SettingRow>
+            )}
             <SettingRow label="Backend status" description="Requires Whisper, Deepgram, or another speech backend">
               <div className="flex items-center gap-2">
                 <span
