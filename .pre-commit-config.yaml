@@ -5,3 +5,12 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  # Refuse to commit live credentials. Local so it works offline and needs no
+  # pinned third-party rev. The same script backs `.git/hooks/pre-commit`.
+  - repo: local
+    hooks:
+      - id: no-secrets
+        name: no live credentials
+        entry: bash scripts/check_secrets.sh
+        language: system
+        pass_filenames: true
