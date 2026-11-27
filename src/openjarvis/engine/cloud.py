@@ -53,6 +53,7 @@ PRICING: Dict[str, tuple[float, float]] = {
     "MiniMax-M2.7-highspeed": (0.60, 2.40),
     "MiniMax-M2.5": (0.30, 1.20),
     "MiniMax-M2.5-highspeed": (0.60, 2.40),
+    "deepseek-flash": (0.27, 1.10),
     "deepseek-v4-flash": (0.27, 1.10),
     "deepseek-v4-pro": (0.55, 2.19),
     # Atlas Cloud — an aggregator, so keys carry the "atlascloud/" routing
@@ -116,6 +117,10 @@ _MINIMAX_MODELS = [
     "MiniMax-M2.5-highspeed",
 ]
 _DEEPSEEK_MODELS = [
+    # The live API (GET https://api.deepseek.com/v1/models) serves
+    # "deepseek-flash" and "deepseek-v4-pro"; "deepseek-v4-flash" is retained
+    # because older configs and the price table still reference it.
+    "deepseek-flash",
     "deepseek-v4-flash",
     "deepseek-v4-pro",
 ]
@@ -1228,12 +1233,22 @@ class CloudEngine(InferenceEngine):
                 "DeepSeek client not available — set DEEPSEEK_API_KEY"
             )
         kwargs.pop("response_format", None)
+        # `tools`/`tool_choice` arrive in kwargs from the agent's tool loop.
+        # Dropping them made DeepSeek fall back to guessing tool names from the
+        # prompt (it emitted <tool_call> text and invented names), so forward
+        # them the way the OpenRouter/Atlas Cloud paths do.
         create_kwargs: Dict[str, Any] = {
             "model": model,
             "messages": messages_to_dicts(messages),
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
+        tools = kwargs.pop("tools", None)
+        if tools:
+            create_kwargs["tools"] = tools
+        tool_choice = kwargs.pop("tool_choice", None)
+        if tool_choice is not None:
+            create_kwargs["tool_choice"] = tool_choice
         t0 = time.monotonic()
         resp = _chat_completion_with_temperature_retry(
             self._deepseek_client, create_kwargs
