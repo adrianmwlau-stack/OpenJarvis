@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings or they fail under bash/sh
+# (the secret-check hook and any CI script depend on this).
+*.sh text eol=lf
+
+# Windows launchers and PowerShell keep native CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
