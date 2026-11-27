@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
+import re
 import threading
 import uuid
 import weakref
@@ -31,6 +33,98 @@ from openjarvis.server.models import (
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------- tool pick ---
+# Every tool schema is sent to the model on every turn. With ~190 MCP tools that
+# is roughly 30k prompt tokens per message: slow, expensive, and it crowds the
+# context. Narrow the set to tools that plausibly match the message, keeping the
+# full catalogue on the servers so nothing is permanently lost.
+TOOL_SELECTION_LIMIT = 24
+_FALLBACK_TOOL_NAMES = ("think", "calculator", "web_search", "file_read")
+
+
+def _last_user_text(messages: Any) -> str:
+    """Return the most recent user message as plain text."""
+    for message in reversed(messages or []):
+        if getattr(message, "role", "") != "user":
+            continue
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):  # multimodal parts
+            parts = [
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") in (None, "text")
+            ]
+            return " ".join(p for p in parts if p)
+    return ""
+
+
+def _select_tools(tools: list, query: str, limit: int = TOOL_SELECTION_LIMIT) -> list:
+    """Rank tools by how well their name/description matches ``query``."""
+    if not query:
+        return tools
+    lowered = query.lower()
+    words = {w for w in re.findall(r"[a-z]{3,}", lowered)}
+
+    scored: list[tuple[int, int, Any]] = []
+    for index, tool in enumerate(tools):
+        spec = getattr(tool, "spec", None)
+        name = (getattr(spec, "name", "") or "").lower()
+        description = (getattr(spec, "description", "") or "").lower()
+        if not name:
+            continue
+        score = 0
+        if name in lowered:
+            score += 15
+        for part in name.split("_"):
+            if len(part) >= 3 and part in words:
+                score += 4
+        score += sum(1 for word in words if word in description)
+        if score:
+            scored.append((score, -index, tool))
+
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    selected = [tool for _, _, tool in scored[:limit]]
+
+    # A vague message ("do the thing") matches nothing; give the model the
+    # general-purpose tools rather than an empty set it cannot act with.
+    if len(selected) < len(_FALLBACK_TOOL_NAMES):
+        chosen = {(getattr(t.spec, "name", "") or "") for t in selected}
+        for tool in tools:
+            name = getattr(tool.spec, "name", "") or ""
+            if name in _FALLBACK_TOOL_NAMES and name not in chosen:
+                selected.append(tool)
+                chosen.add(name)
+
+    return selected
+
+
+def _narrow_agent_tools(
+    agent: Any, query: str, limit: int = TOOL_SELECTION_LIMIT
+) -> Any:
+    """Return a shallow copy of ``agent`` wired to the selected tools only."""
+    tools = getattr(agent, "_tools", None) or []
+    if len(tools) <= limit:
+        return agent
+
+    selected = _select_tools(tools, query, limit)
+    if not selected or len(selected) >= len(tools):
+        return agent
+
+    from openjarvis.tools._stubs import ToolExecutor
+
+    executor = getattr(agent, "_executor", None)
+    narrowed = copy.copy(agent)
+    narrowed._tools = selected
+    narrowed._executor = ToolExecutor(selected, getattr(executor, "_bus", None))
+    logger.debug(
+        "Tool selection: %d/%d tools for %r", len(selected), len(tools), query[:80]
+    )
+    return narrowed
 
 
 def _to_messages(chat_messages) -> list[Message]:
@@ -166,6 +260,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         and not request_body.tools
         and (not request_body.stream or bool(getattr(agent, "_tools", None)))
     )
+
+    # Send only the tools that plausibly matter for this message. Every MCP tool
+    # schema costs prompt tokens on every turn (~30k with 190+ tools), so a
+    # relevance filter pays for itself immediately and leaves the full set
+    # available when the message actually needs it.
+    if use_server_agent:
+        query_text = _last_user_text(request_body.messages)
+        if query_text:
+            agent = _narrow_agent_tools(agent, query_text)
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
