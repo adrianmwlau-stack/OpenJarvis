@@ -85,6 +85,9 @@ export function InputArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Set after sendMessage is defined; lets the voice callback send the text it
+  // just transcribed without waiting for a state re-render.
+  const sendRef = useRef<((text?: string) => void) | null>(null);
 
   const activeId = useAppStore((s) => s.activeId);
   const selectedModel = useAppStore((s) => s.selectedModel);
@@ -110,7 +113,14 @@ export function InputArea() {
     available: speechAvailable,
     startRecording,
     stopRecording,
-  } = useSpeech();
+  } = useSpeech({
+    // Auto-stop (silence or time limit) delivers text here. Put it in the box
+    // and send it immediately, so speaking behaves like pressing Enter.
+    onTranscribed: (text) => {
+      setInput(text);
+      sendRef.current?.(text);
+    },
+  });
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
@@ -172,8 +182,8 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
+  const sendMessage = useCallback(async (override?: string) => {
+    const content = (override ?? input).trim();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
       toast.error('Pick a model first (⌘K)');
@@ -546,6 +556,12 @@ export function InputArea() {
     maxTokens,
   ]);
 
+  // Keep the ref current so the voice callback (defined before sendMessage)
+  // can trigger a send with the freshly transcribed text.
+  useEffect(() => {
+    sendRef.current = sendMessage;
+  }, [sendMessage]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -624,7 +640,7 @@ export function InputArea() {
               reason={micReason}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => void sendMessage()}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
               title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
