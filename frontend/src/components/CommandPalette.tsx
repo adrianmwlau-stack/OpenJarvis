@@ -36,6 +36,14 @@ interface CloudProvider {
 
 const CLOUD_PROVIDERS: CloudProvider[] = [
   {
+    name: 'DeepSeek',
+    envKey: 'DEEPSEEK_API_KEY',
+    models: [
+      { id: 'deepseek-flash', desc: 'DeepSeek Flash — cheap, fast, tool-capable' },
+      { id: 'deepseek-v4-pro', desc: 'DeepSeek V4 Pro — stronger reasoning' },
+    ],
+  },
+  {
     name: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
     models: [
@@ -523,8 +531,13 @@ export function CommandPalette() {
                       )}
                     </div>
 
-                    {/* Models for this provider (only show if key is set) */}
-                    {hasKey && (
+                    {/* Models for this provider.
+                        In the desktop app the key lives in secure storage, so
+                        listing models only after a key is saved is right. In
+                        the browser GUI the keys live in the server's
+                        environment and cannot be read from here, so gate on
+                        nothing and let a failed call report the error. */}
+                    {(hasKey || !desktopKeyStorage) && (
                       <div className="ml-5 flex flex-col gap-1">
                         {provider.models.map((model) => {
                           const isActive = model.id === selectedModel;

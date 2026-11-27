@@ -270,7 +270,13 @@ export async function deleteModel(modelName: string): Promise<void> {
   }
 }
 
-const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/'];
+const _CLOUD_PREFIXES = [
+  'gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-',
+  // Cloud providers whose ids do not follow the OpenAI naming scheme.
+  // Without these, preloadModel treats them as local Ollama tags and tries to
+  // load them from 127.0.0.1:11434.
+  'deepseek-', 'atlascloud/', 'openrouter/', 'MiniMax-', 'codex/',
+];
 
 export async function preloadModel(modelName: string, owner?: string): Promise<void> {
   // Cloud models don't need Ollama preloading
